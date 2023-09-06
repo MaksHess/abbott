@@ -9,6 +9,9 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 # https://peps.python.org/pep-0621/
 [project]
 name = "abbott"
@@ -29,7 +32,10 @@ classifiers = [
     # "Typing :: Typed",
 ]
 # add your package dependencies here
-dependencies = []
+dependencies = [
+    "fractal-tasks-core @ git+https://github.com/fractal-analytics-platform/fractal-tasks-core.git@registration_task",
+
+]
 
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies
 # "extras" (e.g. for `pip install .[test]`)

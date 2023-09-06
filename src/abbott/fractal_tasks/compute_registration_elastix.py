@@ -8,33 +8,21 @@
 # <exact-lab.it> under contract with Liberali Lab from the Friedrich Miescher
 # Institute for Biomedical Research and Pelkmans Lab from the University of
 # Zurich.
-"""
-Calculates translation for image-based registration
-"""
+"""Calculates translation for image-based registration."""
 import logging
 from pathlib import Path
-from typing import Any
-from typing import Sequence
+from typing import Any, Sequence
 
 import anndata as ad
 import dask.array as da
-import numpy as np
-import pandas as pd
-import zarr
-from anndata._io.specs import write_elem
-from pydantic.decorator import validate_arguments
-from skimage.registration import phase_cross_correlation
-
-from fractal_tasks_core.lib_channels import get_channel_from_image_zarr
-from fractal_tasks_core.lib_channels import OmeroChannel
+from fractal_tasks_core.lib_channels import OmeroChannel, get_channel_from_image_zarr
 from fractal_tasks_core.lib_regions_of_interest import (
     convert_indices_to_regions,
-)
-from fractal_tasks_core.lib_regions_of_interest import (
     convert_ROI_table_to_indices,
+    load_region,
 )
-from fractal_tasks_core.lib_regions_of_interest import load_region
 from fractal_tasks_core.lib_zattrs_utils import extract_zyx_pixel_sizes
+from pydantic.decorator import validate_arguments
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +42,7 @@ def compute_registration_elastix(
     level: int = 2,
 ) -> dict[str, Any]:
     """
-    Calculate registration based on images
+    Calculate registration based on images.
 
     This task consists of 3 parts:
 
@@ -148,9 +136,7 @@ def compute_registration_elastix(
     # Read ROIs
     ROI_table_ref = ad.read_zarr(f"{zarr_img_ref_cycle}/tables/{roi_table}")
     ROI_table_x = ad.read_zarr(f"{zarr_img_ref_cycle}/tables/{roi_table}")
-    logger.info(
-        f"Found {len(ROI_table_x)} ROIs in {roi_table=} to be processed."
-    )
+    logger.info(f"Found {len(ROI_table_x)} ROIs in {roi_table=} to be processed.")
 
     # For each cycle, get the relevant info
     # TODO: Add additional checks on ROIs?
@@ -167,17 +153,13 @@ def compute_registration_elastix(
     # in the list will break.
 
     # Read pixel sizes from zattrs file for full_res
-    pxl_sizes_zyx = extract_zyx_pixel_sizes(
-        f"{zarr_img_ref_cycle}/.zattrs", level=0
-    )
+    pxl_sizes_zyx = extract_zyx_pixel_sizes(f"{zarr_img_ref_cycle}/.zattrs", level=0)
     pxl_sizes_zyx_cycle_x = extract_zyx_pixel_sizes(
         f"{zarr_img_cycle_x}/.zattrs", level=0
     )
 
     if pxl_sizes_zyx != pxl_sizes_zyx_cycle_x:
-        raise ValueError(
-            "Pixel sizes need to be equal between cycles for registration"
-        )
+        raise ValueError("Pixel sizes need to be equal between cycles for registration")
 
     # Create list of indices for 3D ROIs spanning the entire Z direction
     list_indices_ref = convert_ROI_table_to_indices(
@@ -196,11 +178,9 @@ def compute_registration_elastix(
 
     num_ROIs = len(list_indices_ref)
     compute = True
-    new_shifts = {}
     for i_ROI in range(num_ROIs):
         logger.info(
-            f"Now processing ROI {i_ROI+1}/{num_ROIs} "
-            f"for channel {channel_align}."
+            f"Now processing ROI {i_ROI+1}/{num_ROIs} " f"for channel {channel_align}."
         )
         img_ref = load_region(
             data_zyx=data_reference_zyx,

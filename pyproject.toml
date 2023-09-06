@@ -33,6 +33,8 @@ classifiers = [
 # add your package dependencies here
 dependencies = [
     "fractal-tasks-core @ git+https://github.com/fractal-analytics-platform/fractal-tasks-core.git@registration_task",
+    "itk",
+    "h5py",
 ]
 
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies

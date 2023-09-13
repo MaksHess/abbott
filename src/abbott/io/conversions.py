@@ -1,12 +1,11 @@
 import warnings
-from typing import TYPE_CHECKING
 
 import h5py
 import itk
 import numpy as np
 
-if TYPE_CHECKING:
-    from itk.support.types import ImageBase as ITKImage
+# if TYPE_CHECKING:
+from itk.support.types import ImageBase as ITKImage
 
 DTYPE_CONVERSION = {
     np.dtype("uint64"): np.dtype("uint16"),
@@ -24,7 +23,7 @@ DTYPE_CONVERSION = {
 
 
 def to_itk(
-    img: np.ndarray | ITKImage | h5py.Dataset,
+    img,  #: np.ndarray | ITKImage | h5py.Dataset,
     scale: tuple[int, ...] | None = None,
     conversion_warning: bool = True,
 ) -> ITKImage:
@@ -79,7 +78,7 @@ def to_itk(
     return trans_img
 
 
-def to_numpy(img: np.ndarray | ITKImage | h5py.Dataset) -> np.ndarray:
+def to_numpy(img) -> np.ndarray:
     """Convert to numpy.
 
     Args:

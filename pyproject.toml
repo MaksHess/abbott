@@ -33,6 +33,7 @@ classifiers = [
 # add your package dependencies here
 dependencies = [
     "fractal-tasks-core==0.11.0",
+    "itk-elastix",
     "itk",
     "h5py",
 ]

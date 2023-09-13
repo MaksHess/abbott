@@ -228,6 +228,7 @@ def compute_registration_elastix(
         trans = register_transform_only(ref_norm, move_norm, parameter_files)
 
         # Write transform parameter files
+        # TODO: Add overwrite check (it overwrites by default)
         for i in range(trans.GetNumberOfParameterMaps()):
             trans_map = trans.GetParameterMap(i)
             fn = (
@@ -239,18 +240,6 @@ def compute_registration_elastix(
             fn.parent.mkdir(exist_ok=True, parents=True)
             trans.WriteParameterFile(trans_map, fn.as_posix())
 
-        # register_transform_only(
-        #     fixed: itk.Image,
-        #     moving: itk.Image,
-        #     parameter_files: Sequence[str],
-        #     fixed_mask: itk.Image = None,
-        #     moving_mask: itk.Image = None,
-        # )
-        # shifts = phase_cross_correlation(
-        #     np.squeeze(img_ref), np.squeeze(img_cycle_x)
-        # )[0]
-        # TODO: Change how registration is computed
-
     return {}
 
 
@@ -260,6 +249,7 @@ def quantile_rescale_exp(
     rejected_planes: tuple[int, int] = (15, 50),
 ) -> itk.Image:
     """TBD."""
+    scale = tuple(img_itk.GetSpacing())[::-1]
     img = to_numpy(img_itk)
     lower, upper = np.quantile(img, q, axis=(1, 2))
     x = np.arange(len(lower))
@@ -277,8 +267,8 @@ def quantile_rescale_exp(
         upper_bounds - lower_bounds, axis=(1, 2)
     )
 
-    out_itk = to_itk(res)
-    out_itk.SetSpacing(img_itk.GetSpacing())
+    out_itk = to_itk(res, scale=scale)
+    # out_itk.SetSpacing(img_itk.GetSpacing())
     out_itk.SetOrigin(img_itk.GetOrigin())
     return out_itk
 
@@ -303,7 +293,7 @@ if __name__ == "__main__":
 
     wavelength_id = "A03_C03"
     parameter_files = ["/Users/joel/Desktop/params_translation_level0.txt"]
-    level = 4
+    level = 1
 
     compute_registration_elastix(
         input_paths=input_paths,

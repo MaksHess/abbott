@@ -17,8 +17,8 @@ import anndata as ad
 import dask.array as da
 import itk
 import numpy as np
-from abbott.io import to_itk, to_numpy
-from abbott.registration import register_transform_only
+from abbott.io.conversions import to_itk, to_numpy
+from abbott.registration.itk_elastix import register_transform_only
 from fractal_tasks_core.lib_channels import OmeroChannel, get_channel_from_image_zarr
 from fractal_tasks_core.lib_regions_of_interest import (
     convert_indices_to_regions,

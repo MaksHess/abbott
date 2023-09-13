@@ -15,6 +15,10 @@ from typing import Any, Sequence
 
 import anndata as ad
 import dask.array as da
+import itk
+import numpy as np
+from abbott.io import to_itk, to_numpy
+from abbott.registration import register_transform_only
 from fractal_tasks_core.lib_channels import OmeroChannel, get_channel_from_image_zarr
 from fractal_tasks_core.lib_regions_of_interest import (
     convert_indices_to_regions,
@@ -23,6 +27,7 @@ from fractal_tasks_core.lib_regions_of_interest import (
 )
 from fractal_tasks_core.lib_zattrs_utils import extract_zyx_pixel_sizes
 from pydantic.decorator import validate_arguments
+from scipy.stats import linregress
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +42,11 @@ def compute_registration_elastix(
     metadata: dict[str, Any],
     # Task-specific arguments
     wavelength_id: str,
+    parameter_files: list[str],
     roi_table: str = "FOV_ROI_table",
-    reference_cycle: int = 0,
+    reference_cycle: str = "0",
     level: int = 2,
+    intensity_normalization: bool = True,
 ) -> dict[str, Any]:
     """
     Calculate registration based on images.
@@ -70,6 +77,7 @@ def compute_registration_elastix(
             managed by Fractal server).
         wavelength_id: Wavelength that will be used for image-based
             registration; e.g. `A01_C01` for Yokogawa, `C01` for MD.
+        parameter_files: TBD
         roi_table: Name of the ROI table over which the task loops to
             calculate the registration. Examples: `FOV_ROI_table` => loop over
             the field of views, `well_ROI_table` => process the whole well as
@@ -79,6 +87,7 @@ def compute_registration_elastix(
             cycle that was provided).
         level: Pyramid level of the image to be segmented. Choose `0` to
             process at full resolution.
+        intensity_normalization: TBD
 
     """
     logger.info(
@@ -93,7 +102,7 @@ def compute_registration_elastix(
     # TODO: Improve the input for this: Can we filter components to not
     # run for itself?
     alignment_cycle = zarr_img_cycle_x.name
-    if alignment_cycle == str(reference_cycle):
+    if alignment_cycle == reference_cycle:
         logger.info(
             "Calculate registration image-based is running for "
             f"cycle {alignment_cycle}, which is the reference_cycle."
@@ -106,7 +115,7 @@ def compute_registration_elastix(
             f"cycle {alignment_cycle}"
         )
 
-    zarr_img_ref_cycle = zarr_img_cycle_x.parent / str(reference_cycle)
+    zarr_img_ref_cycle = zarr_img_cycle_x.parent / reference_cycle
 
     # Read some parameters from metadata
     coarsening_xy = metadata["coarsening_xy"]
@@ -178,7 +187,10 @@ def compute_registration_elastix(
 
     num_ROIs = len(list_indices_ref)
     compute = True
-    for i_ROI in range(num_ROIs):
+    # FIXME: Loop again
+    # for i_ROI in range(num_ROIs):
+    if True:
+        i_ROI = 4
         logger.info(
             f"Now processing ROI {i_ROI+1}/{num_ROIs} " f"for channel {channel_align}."
         )
@@ -202,6 +214,38 @@ def compute_registration_elastix(
                 "This registration is not implemented for ROIs with "
                 "different shapes between cycles"
             )
+
+        logger.info(f"Pixel sizes: {tuple(pxl_sizes_zyx)}")
+
+        ref = to_itk(img_ref, scale=tuple(pxl_sizes_zyx))
+        move = to_itk(img_cycle_x, scale=tuple(pxl_sizes_zyx_cycle_x))
+        if intensity_normalization:
+            ref_norm = quantile_rescale_exp(ref)
+            move_norm = quantile_rescale_exp(move)
+        else:
+            ref_norm = ref
+            move_norm = move
+        trans = register_transform_only(ref_norm, move_norm, parameter_files)
+
+        # Write transform parameter files
+        for i in range(trans.GetNumberOfParameterMaps()):
+            trans_map = trans.GetParameterMap(i)
+            fn = (
+                Path(output_path)
+                / "registration"
+                / "transforms"
+                / (f"{component}_roi_{i_ROI}_t{i}.txt")
+            )
+            fn.parent.mkdir(exist_ok=True, parents=True)
+            trans.WriteParameterFile(trans_map, fn.as_posix())
+
+        # register_transform_only(
+        #     fixed: itk.Image,
+        #     moving: itk.Image,
+        #     parameter_files: Sequence[str],
+        #     fixed_mask: itk.Image = None,
+        #     moving_mask: itk.Image = None,
+        # )
         # shifts = phase_cross_correlation(
         #     np.squeeze(img_ref), np.squeeze(img_cycle_x)
         # )[0]
@@ -210,10 +254,63 @@ def compute_registration_elastix(
     return {}
 
 
-if __name__ == "__main__":
-    from fractal_tasks_core.tasks._utils import run_fractal_task
+def quantile_rescale_exp(
+    img_itk: itk.Image,
+    q: tuple[float, float] = (0.01, 0.999),
+    rejected_planes: tuple[int, int] = (15, 50),
+) -> itk.Image:
+    """TBD."""
+    img = to_numpy(img_itk)
+    lower, upper = np.quantile(img, q, axis=(1, 2))
+    x = np.arange(len(lower))
+    lower_r = lower[rejected_planes[0] : -rejected_planes[1]]
+    upper_r = upper[rejected_planes[0] : -rejected_planes[1]]
+    x_r = x[rejected_planes[0] : -rejected_planes[1]]
 
-    run_fractal_task(
-        task_function=compute_registration_elastix,
-        logger_name=logger.name,
+    lm_lower = linregress(x_r, np.log1p(lower_r))
+    lm_upper = linregress(x_r, np.log1p(upper_r))
+
+    lower_bounds = np.expm1(lm_lower.intercept + lm_lower.slope * x)
+    upper_bounds = np.expm1(lm_upper.intercept + lm_upper.slope * x)
+
+    res = (img - np.expand_dims(lower_bounds, axis=(1, 2))) / np.expand_dims(
+        upper_bounds - lower_bounds, axis=(1, 2)
+    )
+
+    out_itk = to_itk(res)
+    out_itk.SetSpacing(img_itk.GetSpacing())
+    out_itk.SetOrigin(img_itk.GetOrigin())
+    return out_itk
+
+
+if __name__ == "__main__":
+    # from fractal_tasks_core.tasks._utils import run_fractal_task
+
+    # run_fractal_task(
+    #     task_function=compute_registration_elastix,
+    #     logger_name=logger.name,
+    # )
+    input_paths = [
+        "/Users/joel/shares/dataShareJoel/jluethi/Fractal/"
+        "20230906-zebrafish-registration/full/"
+    ]
+    output_path = (
+        "/Users/joel/shares/dataShareJoel/jluethi/Fractal/"
+        "20230906-zebrafish-registration/full/"
+    )
+    component = "AssayPlate_Greiner_#655090.zarr/B/02/1"
+    metadata = {"coarsening_xy": 2}
+
+    wavelength_id = "A03_C03"
+    parameter_files = ["/Users/joel/Desktop/params_translation_level0.txt"]
+    level = 4
+
+    compute_registration_elastix(
+        input_paths=input_paths,
+        output_path=output_path,
+        component=component,
+        metadata=metadata,
+        wavelength_id=wavelength_id,
+        parameter_files=parameter_files,
+        level=level,
     )

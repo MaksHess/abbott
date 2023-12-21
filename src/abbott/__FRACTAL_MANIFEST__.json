@@ -37,6 +37,14 @@
             "type": "string",
             "description": "Wavelength that will be used for image-based registration; e.g. `A01_C01` for Yokogawa, `C01` for MD."
           },
+          "parameter_files": {
+            "title": "Parameter Files",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "TBD"
+          },
           "roi_table": {
             "title": "Roi Table",
             "default": "FOV_ROI_table",
@@ -45,8 +53,8 @@
           },
           "reference_cycle": {
             "title": "Reference Cycle",
-            "default": 0,
-            "type": "integer",
+            "default": "0",
+            "type": "string",
             "description": "Which cycle to register against. Defaults to 0, which is the first OME-Zarr image in the well (usually the first cycle that was provided)."
           },
           "level": {
@@ -54,6 +62,18 @@
             "default": 2,
             "type": "integer",
             "description": "Pyramid level of the image to be segmented. Choose `0` to process at full resolution."
+          },
+          "intensity_normalization": {
+            "title": "Intensity Normalization",
+            "default": true,
+            "type": "boolean",
+            "description": "TBD"
+          },
+          "registration_folder": {
+            "title": "Registration Folder",
+            "default": "transforms",
+            "type": "string",
+            "description": "TBD"
           }
         },
         "required": [
@@ -61,7 +81,8 @@
           "output_path",
           "component",
           "metadata",
-          "wavelength_id"
+          "wavelength_id",
+          "parameter_files"
         ],
         "additionalProperties": false
       },
@@ -75,6 +96,79 @@
       "name": "Compute Registration Elastix",
       "output_type": "zarr",
       "docs_info": "Calculate registration based on images.\n\nThis task consists of 3 parts:\n\n1. Loading the images of a given ROI (=> loop over ROIs)\n2. Calculating the transformation for that ROI\n3. Storing the calculated transformation in the ROI table\n\nParallelization level: image",
+      "docs_link": "https://github.com/MaksHess/abbott"
+    },
+    {
+      "args_schema": {
+        "title": "ApplyRegistrationElastix",
+        "type": "object",
+        "properties": {
+          "input_paths": {
+            "title": "Input Paths",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of input paths where the image data is stored as OME-Zarrs. Should point to the parent folder containing one or many OME-Zarr files, not the actual OME-Zarr file. Example: `[\"/some/path/\"]`. This task only supports a single input path. (standard argument for Fractal tasks, managed by Fractal server)."
+          },
+          "output_path": {
+            "title": "Output Path",
+            "type": "string",
+            "description": "This parameter is not used by this task. (standard argument for Fractal tasks, managed by Fractal server)."
+          },
+          "component": {
+            "title": "Component",
+            "type": "string",
+            "description": "Path to the OME-Zarr image in the OME-Zarr plate that is processed. Example: `\"some_plate.zarr/B/03/0\"`. (standard argument for Fractal tasks, managed by Fractal server)."
+          },
+          "metadata": {
+            "title": "Metadata",
+            "type": "object",
+            "description": "This parameter is not used by this task. (standard argument for Fractal tasks, managed by Fractal server)."
+          },
+          "roi_table": {
+            "title": "Roi Table",
+            "default": "FOV_ROI_table",
+            "type": "string",
+            "description": "Name of the ROI table over which the registration was calculated. The task will loop over these ROIs and apply the transformation."
+          },
+          "reference_cycle": {
+            "title": "Reference Cycle",
+            "default": "0",
+            "type": "string",
+            "description": "Which cycle to register against. Defaults to 0, which is the first OME-Zarr image in the well, usually the first cycle that was provided"
+          },
+          "overwrite_input": {
+            "title": "Overwrite Input",
+            "default": false,
+            "type": "boolean",
+            "description": "Whether the old image data should be replaced with the newly registered image data."
+          },
+          "registration_folder": {
+            "title": "Registration Folder",
+            "default": "transforms",
+            "type": "string",
+            "description": "The folder in which the calculated transformations were saved by the compute_registration_elastix task (relative to the input_path)."
+          }
+        },
+        "required": [
+          "input_paths",
+          "output_path",
+          "component",
+          "metadata"
+        ],
+        "additionalProperties": false
+      },
+      "executable": "fractal_tasks/apply_registration_elastix.py",
+      "input_type": "zarr",
+      "meta": {
+        "cpus_per_task": 1,
+        "mem": 16000,
+        "parallelization_level": "image"
+      },
+      "name": "Apply Registration Elastix",
+      "output_type": "zarr",
+      "docs_info": "Apply registration calculated by Compute Registration Elastix task.\n\nParallelization level: image",
       "docs_link": "https://github.com/MaksHess/abbott"
     }
   ]

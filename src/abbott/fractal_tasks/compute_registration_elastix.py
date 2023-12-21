@@ -314,33 +314,9 @@ def quantile_rescale_exp(
 
 
 if __name__ == "__main__":
-    # from fractal_tasks_core.tasks._utils import run_fractal_task
+    from fractal_tasks_core.tasks._utils import run_fractal_task
 
-    # run_fractal_task(
-    #     task_function=compute_registration_elastix,
-    #     logger_name=logger.name,
-    # )
-    input_paths = [
-        "/Users/joel/shares/dataShareJoel/jluethi/Fractal/"
-        "20230906-zebrafish-registration/full/"
-    ]
-    output_path = (
-        "/Users/joel/shares/dataShareJoel/jluethi/Fractal/"
-        "20230906-zebrafish-registration/full/"
-    )
-    component = "AssayPlate_Greiner_#655090.zarr/B/02/1"
-    metadata = {"coarsening_xy": 2}
-
-    wavelength_id = "A03_C03"
-    parameter_files = ["/Users/joel/Desktop/params_translation_level0.txt"]
-    level = 0
-
-    compute_registration_elastix(
-        input_paths=input_paths,
-        output_path=output_path,
-        component=component,
-        metadata=metadata,
-        wavelength_id=wavelength_id,
-        parameter_files=parameter_files,
-        level=level,
+    run_fractal_task(
+        task_function=compute_registration_elastix,
+        logger_name=logger.name,
     )

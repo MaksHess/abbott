@@ -15,9 +15,7 @@ input_paths = [
 component = "AssayPlate_Greiner_#655090.zarr/B/02/1"
 metadata = {"coarsening_xy": 2}
 output_path = input_paths[0]
-parameter_files = [
-    "/Users/joel/Library/CloudStorage/Dropbox/Joel/BioVisionCenter/Code/abbott/src/abbott/fractal_tasks/params_translation_level0.txt"
-]
+parameter_files = ["params_translation_level0.txt"]
 # Task-specific arguments
 wavelength_id = "A01_C01"
 roi_table = "FOV_ROI_table"

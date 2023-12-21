@@ -17,15 +17,17 @@ import anndata as ad
 import dask.array as da
 import itk
 import numpy as np
+import zarr
 from abbott.io.conversions import to_itk, to_numpy
 from abbott.registration.itk_elastix import register_transform_only
-from fractal_tasks_core.lib_channels import OmeroChannel, get_channel_from_image_zarr
-from fractal_tasks_core.lib_regions_of_interest import (
+from fractal_tasks_core.channels import OmeroChannel, get_channel_from_image_zarr
+from fractal_tasks_core.ngff import load_NgffImageMeta
+from fractal_tasks_core.roi import (
+    check_valid_ROI_indices,
     convert_indices_to_regions,
     convert_ROI_table_to_indices,
     load_region,
 )
-from fractal_tasks_core.lib_zattrs_utils import extract_zyx_pixel_sizes
 from pydantic.decorator import validate_arguments
 from scipy.stats import linregress
 
@@ -105,7 +107,7 @@ def compute_registration_elastix(
     # TODO: Improve the input for this: Can we filter components to not
     # run for itself?
     alignment_cycle = zarr_img_cycle_x.name
-    if alignment_cycle == reference_cycle:
+    if alignment_cycle == str(reference_cycle):
         logger.info(
             "Calculate registration image-based is running for "
             f"cycle {alignment_cycle}, which is the reference_cycle."
@@ -118,10 +120,11 @@ def compute_registration_elastix(
             f"cycle {alignment_cycle}"
         )
 
-    zarr_img_ref_cycle = zarr_img_cycle_x.parent / reference_cycle
+    zarr_img_ref_cycle = zarr_img_cycle_x.parent / str(reference_cycle)
 
-    # Read some parameters from metadata
-    coarsening_xy = metadata["coarsening_xy"]
+    # Read some parameters from Zarr metadata
+    ngff_image_meta = load_NgffImageMeta(str(zarr_img_ref_cycle))
+    coarsening_xy = ngff_image_meta.coarsening_xy
 
     # Get channel_index via wavelength_id.
     # Intially only allow registration of the same wavelength
@@ -147,8 +150,39 @@ def compute_registration_elastix(
 
     # Read ROIs
     ROI_table_ref = ad.read_zarr(f"{zarr_img_ref_cycle}/tables/{roi_table}")
-    ROI_table_x = ad.read_zarr(f"{zarr_img_ref_cycle}/tables/{roi_table}")
+    ROI_table_x = ad.read_zarr(f"{zarr_img_cycle_x}/tables/{roi_table}")
     logger.info(f"Found {len(ROI_table_x)} ROIs in {roi_table=} to be processed.")
+
+    # Check that table type of ROI_table_ref is valid. Note that
+    # "ngff:region_table" and None are accepted for backwards compatibility
+    valid_table_types = [
+        "roi_table",
+        "masking_roi_table",
+        "ngff:region_table",
+        None,
+    ]
+
+    ROI_table_ref_group = zarr.open_group(
+        f"{zarr_img_ref_cycle}/tables/{roi_table}",
+        mode="r",
+    )
+    ref_table_attrs = ROI_table_ref_group.attrs.asdict()
+    ref_table_type = ref_table_attrs.get("type")
+    if ref_table_type not in valid_table_types:
+        raise ValueError(
+            f"Table '{roi_table}' (with type '{ref_table_type}') is "
+            "not a valid ROI table."
+        )
+
+    # For each cycle, get the relevant info
+    # TODO: Add additional checks on ROIs?
+    if (ROI_table_ref.obs.index != ROI_table_x.obs.index).all():
+        raise ValueError(
+            "Registration is only implemented for ROIs that match between the "
+            "cycles (e.g. well, FOV ROIs). Here, the ROIs in the reference "
+            "cycles were {ROI_table_ref.obs.index}, but the ROIs in the "
+            "alignment cycle were {ROI_table_x.obs.index}"
+        )
 
     # For each cycle, get the relevant info
     # TODO: Add additional checks on ROIs?
@@ -164,11 +198,10 @@ def compute_registration_elastix(
     # If we relax this, downstream assumptions on matching based on order
     # in the list will break.
 
-    # Read pixel sizes from zattrs file for full_res
-    pxl_sizes_zyx = extract_zyx_pixel_sizes(f"{zarr_img_ref_cycle}/.zattrs", level=0)
-    pxl_sizes_zyx_cycle_x = extract_zyx_pixel_sizes(
-        f"{zarr_img_cycle_x}/.zattrs", level=0
-    )
+    # Read pixel sizes from zarr attributes
+    ngff_image_meta_cycle_x = load_NgffImageMeta(str(zarr_img_cycle_x))
+    pxl_sizes_zyx = ngff_image_meta.get_pixel_sizes_zyx(level=0)
+    pxl_sizes_zyx_cycle_x = ngff_image_meta_cycle_x.get_pixel_sizes_zyx(level=0)
 
     if pxl_sizes_zyx != pxl_sizes_zyx_cycle_x:
         raise ValueError("Pixel sizes need to be equal between cycles for registration")
@@ -180,6 +213,7 @@ def compute_registration_elastix(
         coarsening_xy=coarsening_xy,
         full_res_pxl_sizes_zyx=pxl_sizes_zyx,
     )
+    check_valid_ROI_indices(list_indices_ref, roi_table)
 
     list_indices_cycle_x = convert_ROI_table_to_indices(
         ROI_table_x,
@@ -187,13 +221,14 @@ def compute_registration_elastix(
         coarsening_xy=coarsening_xy,
         full_res_pxl_sizes_zyx=pxl_sizes_zyx,
     )
+    check_valid_ROI_indices(list_indices_cycle_x, roi_table)
 
     num_ROIs = len(list_indices_ref)
     compute = True
     # FIXME: Loop again
-    # for i_ROI in range(num_ROIs):
-    if True:
-        i_ROI = 4
+    for i_ROI in range(num_ROIs):
+        # if True:
+        #     i_ROI = 0
         logger.info(
             f"Now processing ROI {i_ROI+1}/{num_ROIs} " f"for channel {channel_align}."
         )
@@ -221,10 +256,12 @@ def compute_registration_elastix(
         logger.info(f"Pixel sizes: {tuple(pxl_sizes_zyx)}")
 
         ref = to_itk(img_ref, scale=tuple(pxl_sizes_zyx))
+        # print(ref.GetPixel(500, 500, 1))
         move = to_itk(img_cycle_x, scale=tuple(pxl_sizes_zyx_cycle_x))
         if intensity_normalization:
-            ref_norm = quantile_rescale_exp(ref)
-            move_norm = quantile_rescale_exp(move)
+            # FIXME: Decide on how to make quantile rescaling more robust
+            ref_norm = quantile_rescale_exp(ref, rejected_planes=(0, -1))
+            move_norm = quantile_rescale_exp(move, rejected_planes=(0, -1))
         else:
             ref_norm = ref
             move_norm = move
@@ -249,7 +286,7 @@ def compute_registration_elastix(
 def quantile_rescale_exp(
     img_itk: itk.Image,
     q: tuple[float, float] = (0.01, 0.999),
-    rejected_planes: tuple[int, int] = (15, 50),
+    rejected_planes: tuple[int, int] = (15, 50),  # FIXME: Expose this
 ) -> itk.Image:
     """TBD."""
     scale = tuple(img_itk.GetSpacing())[::-1]

@@ -24,7 +24,7 @@ DTYPE_CONVERSION = {
 
 def to_itk(
     img,  #: np.ndarray | ITKImage | h5py.Dataset,
-    scale: tuple[int, ...] | None = None,
+    scale: tuple[float, ...] | None = None,
     conversion_warning: bool = True,
 ) -> ITKImage:
     """Convert something image-like to `itk.Image`.

@@ -47,6 +47,7 @@ def compute_registration_elastix(
     reference_cycle: str = "0",
     level: int = 2,
     intensity_normalization: bool = True,
+    registration_folder: str = "transforms",
 ) -> dict[str, Any]:
     """
     Calculate registration based on images.
@@ -88,8 +89,10 @@ def compute_registration_elastix(
         level: Pyramid level of the image to be segmented. Choose `0` to
             process at full resolution.
         intensity_normalization: TBD
+        registration_folder: TBD
 
     """
+    # TODO: Optionally turn on/off Elastix logging (very verbose)
     logger.info(
         f"Running for {input_paths=}, {component=}. \n"
         f"Calculating translation registration per {roi_table=} for "
@@ -234,7 +237,7 @@ def compute_registration_elastix(
             fn = (
                 Path(output_path)
                 / "registration"
-                / "transforms"
+                / registration_folder
                 / (f"{component}_roi_{i_ROI}_t{i}.txt")
             )
             fn.parent.mkdir(exist_ok=True, parents=True)
@@ -293,7 +296,7 @@ if __name__ == "__main__":
 
     wavelength_id = "A03_C03"
     parameter_files = ["/Users/joel/Desktop/params_translation_level0.txt"]
-    level = 1
+    level = 0
 
     compute_registration_elastix(
         input_paths=input_paths,

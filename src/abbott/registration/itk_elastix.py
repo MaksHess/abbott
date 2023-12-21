@@ -23,8 +23,8 @@ def register(
     fixed: itk.Image,
     moving: itk.Image,
     parameter_files: Sequence[str],
-    fixed_mask: itk.Image | None = None,
-    moving_mask: itk.Image | None = None,
+    fixed_mask: itk.Image = None,
+    moving_mask: itk.Image = None,
 ) -> Tuple[itk.Image, itk.ParameterObject]:
     """Register an image and apply the resulting transform.
 
